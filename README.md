@@ -46,7 +46,7 @@ GEMINI_API_KEY=your-gemini-api-key
 
 #### For Gemini:
 1. Get API key from: https://aistudio.google.com/app/apikey
-2. Your key is already configured: `AIzaSyDe7xkiyWjbgFTDlrkcqGchIZOg1WzG1rQ`
+2. Add it to your `.env` file as `GEMINI_API_KEY`
 
 ### 3. Test the Server
 
