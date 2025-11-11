@@ -1,8 +1,0 @@
-{
-  "mcpServers": {
-    "email-sender": {
-      "command": "python",
-      "args": ["d:\\mcp_claude\\main.py"]
-    }
-  }
-}

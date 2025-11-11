@@ -1,2 +1,0 @@
-Test attachment file
-This is a sample document for testing email attachments.
