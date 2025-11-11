@@ -34,15 +34,19 @@ SENDER_NAME = os.getenv("SENDER_NAME", "Professional Sender")
 mcp = FastMCP("email-sender")
 
 
-def enhance_email_with_ai(main_idea: str, tone: str = "professional") -> dict:
+def enhance_email_with_ai(main_idea: str, tone: str = "professional", recipient_name: str = "") -> dict:
     """
     Enhance a short main idea into a professional email using Gemini AI
     Returns dict with 'subject', 'body', 'greeting', 'closing'
     """
+    greeting_instruction = ""
+    if recipient_name:
+        greeting_instruction = f"\nRecipient name: {recipient_name}\nUse a personalized greeting with their name (e.g., 'Dear {recipient_name},' or 'Hi {recipient_name},')"
+    
     prompt = f"""You are a professional email writing assistant. Given a short main idea, create a polished, concise, and natural-sounding email.
 
 Main idea: {main_idea}
-Tone: {tone}
+Tone: {tone}{greeting_instruction}
 
 Generate a complete professional email with:
 1. A clear, specific subject line (no "Subject:" prefix)
@@ -170,9 +174,17 @@ def send_professional_email(
     tone: str = "professional",
     cc: str = "",
     bcc: str = "",
-    attachments: str = ""
+    attachments: str = "",
+    recipient_names: str = ""
 ) -> str:
     """Send professional emails to multiple recipients with optional attachments. Provide a short main idea and list of email addresses - the AI automatically enhances it into a polished email with proper subject, greeting, and sign-off.
+
+    PERSONALIZED GREETINGS:
+    - Use recipient_names parameter to personalize each email
+    - Format: "John Doe, Sarah Smith" (comma-separated, same order as recipients)
+    - Example: recipients="john@co.com, sarah@co.com", recipient_names="John, Sarah"
+    - Each person gets their own email with personalized greeting
+    - If names not provided, uses generic greeting
 
     ATTACHMENTS WORKFLOW - When user uploads a file:
     
@@ -206,10 +218,15 @@ def send_professional_email(
         bcc: Optional comma-separated BCC recipients
         attachments: Comma-separated file paths (use paths from save_temp_file tool)
     """
-    # Parse recipients and attachments
+    # Parse recipients, names, and attachments
     recipient_list = [email.strip() for email in recipients.split(",") if email.strip()]
+    name_list = [name.strip() for name in recipient_names.split(",") if name.strip()] if recipient_names else []
     cc_list = [email.strip() for email in cc.split(",") if email.strip()] if cc else None
     bcc_list = [email.strip() for email in bcc.split(",") if email.strip()] if bcc else None
+    
+    # Pad name_list with empty strings if fewer names than recipients
+    while len(name_list) < len(recipient_list):
+        name_list.append("")
     
     # Handle attachment paths - convert relative to absolute
     attachment_list = []
@@ -235,25 +252,30 @@ def send_professional_email(
     if not SMTP_EMAIL or not SMTP_PASSWORD:
         return "Error: SMTP credentials not configured. Please set SMTP_EMAIL and SMTP_PASSWORD in .env file"
     
-    # Enhance email with AI
-    try:
-        enhanced = enhance_email_with_ai(main_idea, tone)
-        subject = enhanced["subject"]
-        greeting = enhanced["greeting"]
-        body_text = enhanced["body"]
-        closing = enhanced["closing"]
-        
-        # Format full email body
-        full_body = f"{greeting}\n\n{body_text}\n\n{closing},\n{SENDER_NAME}"
-        
-    except Exception as e:
-        return f"Error enhancing email: {str(e)}"
-    
-    # Send emails to each recipient individually
+    # Send emails to each recipient individually with personalized greeting
     results = []
-    for recipient in recipient_list:
-        result = send_email(recipient, subject, full_body, cc_list, bcc_list, attachment_list)
-        results.append(result)
+    email_contents = []
+    
+    for recipient, recipient_name in zip(recipient_list, name_list):
+        # Enhance email with AI (personalized for each recipient)
+        try:
+            enhanced = enhance_email_with_ai(main_idea, tone, recipient_name)
+            subject = enhanced["subject"]
+            greeting = enhanced["greeting"]
+            body_text = enhanced["body"]
+            closing = enhanced["closing"]
+            
+            # Format full email body
+            full_body = f"{greeting}\n\n{body_text}\n\n{closing},\n{SENDER_NAME}"
+            
+            # Send email
+            result = send_email(recipient, subject, full_body, cc_list, bcc_list, attachment_list)
+            results.append(result)
+            email_contents.append({"recipient": recipient, "subject": subject, "body": full_body})
+            
+        except Exception as e:
+            results.append({"status": "error", "message": f"Error for {recipient}: {str(e)}"})
+            email_contents.append({"recipient": recipient, "subject": "Error", "body": str(e)})
     
     # Format response
     success_count = sum(1 for r in results if r["status"] == "success")
@@ -272,20 +294,25 @@ def send_professional_email(
     all_attached = list(set(all_attached))
     all_missing = list(set(all_missing))
     
+    # Get first email content for display (all have same subject)
+    first_content = email_contents[0] if email_contents else {"subject": "N/A", "body": "N/A"}
+    
     response = f"""✓ Email Sent Successfully
 
-Subject: {subject}
+Subject: {first_content['subject']}
 Recipients: {len(recipient_list)} ({success_count} sent, {failed_count} failed)
 
---- Email Content ---
-{full_body}
+--- Sample Email Content (first recipient) ---
+{first_content['body']}
 --------------------
 
 Delivery Status:
 """
     
-    for recipient, result in zip(recipient_list, results):
+    for i, (recipient, result) in enumerate(zip(recipient_list, results)):
         status_icon = "✓" if result["status"] == "success" else "✗"
+        name_info = f" ({name_list[i]})" if i < len(name_list) and name_list[i] else ""
+        response += f"\n{status_icon} {recipient}{name_info}: {result['message']}"
         response += f"{status_icon} {recipient}: {result['message']}\n"
     
     if cc_list:
